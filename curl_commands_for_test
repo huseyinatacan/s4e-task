@@ -1,0 +1,17 @@
+ curl http://localhost:8000/command-jobs/fb61d48d-adb7-406e-b782-504ea8695843
+ curl http://localhost:8000/command-jobs
+
+curl -X POST http://localhost:8000/command-jobs \
+  -H "Content-Type: application/json" \
+  -d '{"command":"ls","options":[]}'
+
+curl -X POST http://localhost:8000/command-jobs \
+  -H "Content-Type: application/json" \
+  -d '{"command":"ls","options":["-alh"]}'
+
+curl http://localhost:8000/crawler-jobs
+curl http://localhost:8000/crawler-jobs/6de79621-bb81-4e71-ad78-85ee3b6d0ffa
+curl -X POST http://localhost:8000/crawler-jobs \
+  -H "Content-Type: application/json" \
+  -d '{"website":"https://huseyinatacan.github.io"}'
+
