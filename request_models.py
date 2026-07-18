@@ -6,10 +6,7 @@ class CommandJobRequest(BaseModel):
         max_length=100,
         examples=["ls"]
     )
-    options: list[str] = Field(
-        default_factory=list,
-        examples=[["-l", "-a"]],
-    )
+
 
 class CrawlerJobRequest(BaseModel):
     website: str = Field(

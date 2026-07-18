@@ -1,6 +1,5 @@
 import json
 import os
-import shlex
 from contextlib import asynccontextmanager
 from uuid import UUID
 
@@ -91,7 +90,7 @@ async def health():
 
 @app.post("/command-jobs",status_code=202)
 async def create_command_job(request: CommandJobRequest):
-    full_command = shlex.join([request.command, *request.options])
+    full_command = request.command
     async with app.state.db.acquire() as conn:
         job = await conn.fetchrow(
             """INSERT INTO command_jobs (command, status) VALUES ($1, 'queued') RETURNING * """,
@@ -110,7 +109,6 @@ async def create_command_job(request: CommandJobRequest):
         "job_type": "command",
         "status": "queued",
         "command": request.command,
-        "options": request.options,
         "stored_command": full_command,
         "detail_url": f"/command-jobs/{job['id']}",
     }
