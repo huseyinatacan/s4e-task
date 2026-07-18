@@ -6,6 +6,7 @@ from uuid import UUID
 import aio_pika
 import asyncpg
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from rabbit import (COMMANDS_QUEUE, CRAWLER_QUEUE, declare_queues, get_connection)
 
@@ -32,6 +33,16 @@ async def lifespan(app: FastAPI):
         await app.state.db.close()
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 async def publish_job(queue: str, job_id: UUID) -> None:
     payload = {"job_id": str(job_id)}
