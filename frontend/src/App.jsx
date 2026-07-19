@@ -1,261 +1,103 @@
 import { useState } from 'react';
-import {
-  Box,
-  Button,
-  Card,
-  CardContent,
-  TextField,
-  Typography,
-} from '@mui/material';
+import { Box } from '@mui/material';
+
+import JobForm from './components/JobForm';
+import ResultCard from './components/ResultCard';
+import { createJobHandler } from './services/createJobHandler';
 
 const API_URL = 'http://localhost:8000';
-const MAXIMUM_POLL_ATTEMPTS = 60;
-const POLL_INTERVAL_MS = 1000;
 
 function App() {
-  // Command job states
+  // Command state
   const [command, setCommand] = useState('');
   const [commandJobStatus, setCommandJobStatus] = useState('');
   const [commandResult, setCommandResult] = useState('');
   const [commandJobExitCode, setCommandJobExitCode] = useState(null);
   const [isCommandJobLoading, setIsCommandJobLoading] = useState(false);
 
-  // Crawl job states
+  // Crawl state
   const [website, setWebsite] = useState('');
   const [crawlJobStatus, setCrawlJobStatus] = useState('');
   const [crawlResult, setCrawlResult] = useState('');
   const [crawlJobExitCode, setCrawlJobExitCode] = useState(null);
   const [isCrawlJobLoading, setIsCrawlJobLoading] = useState(false);
 
-  const wait = (milliseconds) =>
-    new Promise((resolve) => {
-      setTimeout(resolve, milliseconds);
-    });
+  const commandJobHandler = createJobHandler({
+    endpoint: `${API_URL}/command-jobs`,
 
-  const getErrorMessage = async (response, defaultMessage) => {
-    const errorData = await response.json().catch(() => null);
+    setStatus: setCommandJobStatus,
+    setResult: setCommandResult,
+    setExitCode: setCommandJobExitCode,
+    setIsLoading: setIsCommandJobLoading,
 
-    return errorData?.detail ?? `${defaultMessage}: ${response.status}`;
-  };
+    createRequestBody: (value) => ({
+      command: value.trim(),
+    }),
 
-  // --------------------------------------------------
-  // Command functions
-  // --------------------------------------------------
-
-  const checkCommandJobStatus = async (jobId) => {
-    const response = await fetch(
-      `${API_URL}/command-jobs/${jobId}`,
-    );
-
-    if (!response.ok) {
-      throw new Error(
-        await getErrorMessage(
-          response,
-          'Could not get command job status',
-        ),
-      );
-    }
-
-    return response.json();
-  };
-
-  const pollCommandJobStatus = async (jobId) => {
-    for (
-      let attempt = 0;
-      attempt < MAXIMUM_POLL_ATTEMPTS;
-      attempt += 1
-    ) {
-      const job = await checkCommandJobStatus(jobId);
-
-      setCommandJobStatus(job.status);
-      setCommandJobExitCode(job.exit_code ?? null);
-
-      if (job.status === 'completed') {
-        setCommandResult(
-          job.output || 'Command completed successfully.',
-        );
-
-        return;
+    validate: (value) => {
+      if (!value.trim()) {
+        return 'Please enter a command.';
       }
 
-      if (job.status === 'failed') {
-        setCommandResult(
-          job.output
-            ? `Error occurred:\n${job.output}`
-            : 'Error occurred: Unknown error',
-        );
+      return null;
+    },
 
-        return;
+    getCompletedResult: (job) =>
+      job.output || 'Command completed successfully.',
+
+    getFailedResult: (job) =>
+      job.output
+        ? `Command failed:\n${job.output}`
+        : 'Command failed: Unknown error',
+
+    timeoutMessage: 'The command took too long to complete.',
+  });
+
+  const crawlJobHandler = createJobHandler({
+    endpoint: `${API_URL}/crawler-jobs`,
+
+    setStatus: setCrawlJobStatus,
+    setResult: setCrawlResult,
+    setExitCode: setCrawlJobExitCode,
+    setIsLoading: setIsCrawlJobLoading,
+
+    createRequestBody: (value) => ({
+      website: value.trim(),
+    }),
+
+    validate: (value) => {
+      const trimmedWebsite = value.trim();
+
+      if (!trimmedWebsite) {
+        return 'Please enter a website.';
       }
 
-      await wait(POLL_INTERVAL_MS);
-    }
+      try {
+        new URL(trimmedWebsite);
+        return null;
+      } catch {
+        return 'Please enter a valid website URL.';
+      }
+    },
 
-    throw new Error('The command job took too long to complete.');
-  };
+    getCompletedResult: (job) => {
+      const output =
+        job.output || 'Crawl completed successfully.';
 
-  const sendCommand = async () => {
-    const trimmedCommand = command.trim();
-
-    if (!trimmedCommand) {
-      setCommandJobStatus('error');
-      setCommandResult('Please enter a command.');
-      return;
-    }
-
-    setIsCommandJobLoading(true);
-    setCommandResult('');
-    setCommandJobExitCode(null);
-    setCommandJobStatus('submitting');
-
-    try {
-      const response = await fetch(`${API_URL}/command-jobs`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          command: trimmedCommand,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(
-          await getErrorMessage(
-            response,
-            'Could not create command job',
-          ),
-        );
+      if (job.total_url_count === undefined) {
+        return output;
       }
 
-      const createdJob = await response.json();
+      return `${output}\nTotal URLs: ${job.total_url_count}`;
+    },
 
-      setCommandJobStatus(createdJob.status);
+    getFailedResult: (job) =>
+      job.output
+        ? `Crawl failed:\n${job.output}`
+        : 'Crawl failed: Unknown error',
 
-      await pollCommandJobStatus(createdJob.job_id);
-    } catch (error) {
-      setCommandJobStatus('error');
-      setCommandResult(
-        error instanceof Error
-          ? error.message
-          : 'An unknown error occurred.',
-      );
-    } finally {
-      setIsCommandJobLoading(false);
-    }
-  };
-
-  // --------------------------------------------------
-  // Crawler functions
-  // --------------------------------------------------
-
-  const checkCrawlJobStatus = async (jobId) => {
-    const response = await fetch(
-      `${API_URL}/crawler-jobs/${jobId}`,
-    );
-
-    if (!response.ok) {
-      throw new Error(
-        await getErrorMessage(
-          response,
-          'Could not get crawl job status',
-        ),
-      );
-    }
-
-    return response.json();
-  };
-
-  const pollCrawlJobStatus = async (jobId) => {
-    for (
-      let attempt = 0;
-      attempt < MAXIMUM_POLL_ATTEMPTS;
-      attempt += 1
-    ) {
-      const job = await checkCrawlJobStatus(jobId);
-
-      setCrawlJobStatus(job.status);
-      setCrawlJobExitCode(job.exit_code ?? null);
-
-      if (job.status === 'completed') {
-        setCrawlResult(
-          job.output ||
-            `Crawl completed successfully.${
-              job.total_url_count !== undefined
-                ? `\nTotal URLs: ${job.total_url_count}`
-                : ''
-            }`,
-        );
-
-        return;
-      }
-
-      if (job.status === 'failed') {
-        setCrawlResult(
-          job.output
-            ? `Error occurred:\n${job.output}`
-            : 'Error occurred: Unknown error',
-        );
-
-        return;
-      }
-
-      await wait(POLL_INTERVAL_MS);
-    }
-
-    throw new Error('The crawl job took too long to complete.');
-  };
-
-  const startCrawl = async () => {
-    const trimmedWebsite = website.trim();
-
-    if (!trimmedWebsite) {
-      setCrawlJobStatus('error');
-      setCrawlResult('Please enter a website.');
-      return;
-    }
-
-    setIsCrawlJobLoading(true);
-    setCrawlResult('');
-    setCrawlJobExitCode(null);
-    setCrawlJobStatus('submitting');
-
-    try {
-      const response = await fetch(`${API_URL}/crawler-jobs`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          website: trimmedWebsite,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(
-          await getErrorMessage(
-            response,
-            'Could not create crawl job',
-          ),
-        );
-      }
-
-      const createdJob = await response.json();
-
-      setCrawlJobStatus(createdJob.status);
-
-      await pollCrawlJobStatus(createdJob.job_id);
-    } catch (error) {
-      setCrawlJobStatus('error');
-      setCrawlResult(
-        error instanceof Error
-          ? error.message
-          : 'An unknown error occurred.',
-      );
-    } finally {
-      setIsCrawlJobLoading(false);
-    }
-  };
+    timeoutMessage: 'The crawl took too long to complete.',
+  });
 
   return (
     <Box
@@ -290,40 +132,21 @@ function App() {
             alignItems: 'stretch',
           }}
         >
-          <Box
-            sx={{
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 2,
+          <JobForm
+            title="Run Command"
+            label="Command"
+            placeholder="Write your command here..."
+            value={command}
+            onChange={setCommand}
+            onSubmit={() => {
+              commandJobHandler.submitJob(command);
             }}
-          >
-            <Typography variant="h4">
-              Run Command
-            </Typography>
-
-            <TextField
-              label="Command"
-              placeholder="Write your command here..."
-              value={command}
-              onChange={(event) => {
-                setCommand(event.target.value);
-              }}
-              multiline
-              rows={5}
-              fullWidth
-              disabled={isCommandJobLoading}
-            />
-
-            <Button
-              variant="contained"
-              size="large"
-              onClick={sendCommand}
-              disabled={isCommandJobLoading}
-            >
-              {isCommandJobLoading ? 'Running...' : 'Submit command'}
-            </Button>
-          </Box>
+            isLoading={isCommandJobLoading}
+            buttonText="Run command"
+            loadingText="Running..."
+            multiline
+            rows={5}
+          />
 
           <ResultCard
             title="Command Result"
@@ -346,38 +169,19 @@ function App() {
             alignItems: 'stretch',
           }}
         >
-          <Box
-            sx={{
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 2,
+          <JobForm
+            title="Crawl Website"
+            label="Website"
+            placeholder="https://example.com"
+            value={website}
+            onChange={setWebsite}
+            onSubmit={() => {
+              crawlJobHandler.submitJob(website);
             }}
-          >
-            <Typography variant="h4">
-              Crawl Website
-            </Typography>
-
-            <TextField
-              label="Website"
-              placeholder="https://example.com"
-              value={website}
-              onChange={(event) => {
-                setWebsite(event.target.value);
-              }}
-              fullWidth
-              disabled={isCrawlJobLoading}
-            />
-
-            <Button
-              variant="contained"
-              size="large"
-              onClick={startCrawl}
-              disabled={isCrawlJobLoading}
-            >
-              {isCrawlJobLoading ? 'Crawling...' : 'Start crawl'}
-            </Button>
-          </Box>
+            isLoading={isCrawlJobLoading}
+            buttonText="Start crawl"
+            loadingText="Crawling..."
+          />
 
           <ResultCard
             title="Crawl Result"
@@ -389,53 +193,6 @@ function App() {
         </Box>
       </Box>
     </Box>
-  );
-}
-
-function ResultCard({
-  title,
-  status,
-  exitCode,
-  result,
-  emptyMessage,
-}) {
-  return (
-    <Card
-      sx={{
-        flex: 1,
-        minHeight: 250,
-        display: 'flex',
-        alignItems: 'center',
-      }}
-    >
-      <CardContent sx={{ width: '100%' }}>
-        <Typography variant="h5" gutterBottom>
-          {title}
-        </Typography>
-
-        <Typography sx={{ mb: 1, fontWeight: 'bold' }}>
-          Status: {status || 'Not started'}
-        </Typography>
-
-        {exitCode !== null && (
-          <Typography sx={{ mb: 2 }}>
-            Exit code: {exitCode}
-          </Typography>
-        )}
-
-        <Typography
-          component="pre"
-          sx={{
-            margin: 0,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-            fontFamily: 'monospace',
-          }}
-        >
-          {result || emptyMessage}
-        </Typography>
-      </CardContent>
-    </Card>
   );
 }
 
